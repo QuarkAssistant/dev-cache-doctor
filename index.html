@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dev Cache Doctor — stale Next.js/Vite env + HMR fix plan</title>
+  <meta name="description" content="A browser-only checklist generator for stale Next.js/Vite dev cache, env var, Docker HMR, and lockfile install issues." />
+  <meta name="theme-color" content="#101828" />
+  <meta property="og:title" content="Dev Cache Doctor" />
+  <meta property="og:description" content="Diagnose stale CSS/JS/env values in Next.js, Vite, Docker, and local dev without uploading project files." />
+  <meta property="og:type" content="website" />
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f7f2ea;
+      --ink: #101828;
+      --muted: #5d6678;
+      --card: #fffdf8;
+      --card-2: #f0e7da;
+      --accent: #2458ff;
+      --accent-2: #f97316;
+      --good: #067647;
+      --warn: #b54708;
+      --danger: #b42318;
+      --border: rgba(16, 24, 40, .14);
+      --shadow: 0 22px 60px rgba(35, 45, 70, .16);
+      --radius: 22px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0c111d;
+        --ink: #f7f7fb;
+        --muted: #b6c0d1;
+        --card: #151b2a;
+        --card-2: #1d2638;
+        --border: rgba(255,255,255,.14);
+        --shadow: 0 22px 70px rgba(0,0,0,.45);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 15% 10%, rgba(36, 88, 255, .15), transparent 26rem),
+        radial-gradient(circle at 86% 2%, rgba(249, 115, 22, .13), transparent 24rem),
+        var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+    a { color: inherit; }
+    button, select, input { font: inherit; }
+    .shell { width: min(1120px, calc(100% - 32px)); margin: 0 auto; }
+    header { padding: 38px 0 24px; }
+    .nav { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .brand { display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: -.03em; }
+    .logo {
+      width: 42px; height: 42px; border-radius: 14px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, var(--accent), #6f39ff 55%, var(--accent-2));
+      color: white; box-shadow: 0 12px 28px rgba(36, 88, 255, .25);
+    }
+    .nav-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      border: 1px solid var(--border); background: var(--card); color: var(--ink);
+      padding: 11px 14px; border-radius: 999px; cursor: pointer;
+      display: inline-flex; gap: 8px; align-items: center; justify-content: center;
+      text-decoration: none; min-height: 44px; font-weight: 700;
+      transition: transform .16s ease, border-color .16s ease, background .16s ease;
+    }
+    .btn:hover { transform: translateY(-1px); border-color: rgba(36,88,255,.45); }
+    .btn.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+    .btn.orange { background: #ff6b35; color: white; border-color: #ff6b35; }
+
+    .hero { display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(320px, .92fr); gap: 26px; align-items: stretch; padding: 34px 0 24px; }
+    .hero-card, .panel, .result-card, .note {
+      border: 1px solid var(--border); border-radius: var(--radius); background: color-mix(in srgb, var(--card) 92%, transparent); box-shadow: var(--shadow);
+    }
+    .hero-card { padding: clamp(28px, 5vw, 54px); min-height: 520px; display: flex; flex-direction: column; justify-content: center; }
+    .eyebrow { display: inline-flex; gap: 8px; align-items: center; color: var(--accent); font-weight: 800; margin-bottom: 18px; text-transform: uppercase; letter-spacing: .08em; font-size: 13px; }
+    h1 { font-size: clamp(44px, 8vw, 86px); letter-spacing: -.08em; line-height: .9; margin: 0 0 22px; max-width: 11ch; }
+    .lead { font-size: clamp(18px, 2vw, 22px); color: var(--muted); max-width: 62ch; margin: 0 0 24px; }
+    .hero-pills { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .pill { border: 1px solid var(--border); background: var(--card-2); border-radius: 999px; padding: 8px 11px; color: var(--muted); font-weight: 700; font-size: 13px; }
+
+    .diagnostic { padding: 22px; }
+    .diagnostic h2, .panel h2, .result-card h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: -.03em; }
+    .diagnostic p, .panel p { color: var(--muted); margin-top: 0; }
+    .field { margin: 18px 0; }
+    .field label.title { display: block; font-weight: 800; margin-bottom: 8px; }
+    select {
+      width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 14px; background: var(--card); color: var(--ink); min-height: 46px;
+    }
+    .checks { display: grid; gap: 10px; }
+    .check {
+      display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start;
+      padding: 11px; border: 1px solid var(--border); border-radius: 14px; background: color-mix(in srgb, var(--card-2) 68%, transparent);
+      cursor: pointer;
+    }
+    .check input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--accent); }
+    .check span { color: var(--muted); display: block; font-size: 14px; }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+
+    main { padding-bottom: 42px; }
+    .grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 22px; margin: 22px 0; }
+    .panel { padding: 22px; }
+    .quick-list { display: grid; gap: 12px; margin: 18px 0 0; padding: 0; list-style: none; }
+    .quick-list li { display: grid; grid-template-columns: 32px 1fr; gap: 12px; align-items: start; }
+    .num { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: var(--ink); color: var(--bg); font-weight: 900; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    pre { overflow: auto; margin: 0; padding: 14px; background: #101828; color: #f8fafc; border-radius: 15px; font-size: 13px; white-space: pre-wrap; }
+    .result-card { padding: 22px; margin: 22px 0; }
+    .plan { display: grid; gap: 14px; margin-top: 16px; }
+    .step { border: 1px solid var(--border); border-radius: 17px; background: color-mix(in srgb, var(--card-2) 62%, transparent); padding: 16px; }
+    .step strong { display: block; margin-bottom: 7px; }
+    .severity { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 9px; font-size: 12px; font-weight: 900; margin-bottom: 10px; }
+    .severity.high { color: #fff; background: var(--danger); }
+    .severity.medium { color: #fff; background: var(--warn); }
+    .severity.low { color: #fff; background: var(--good); }
+    .copy-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 10px; }
+    .copy-row .btn { min-height: 38px; padding: 8px 11px; }
+    .note { padding: 18px; margin: 22px 0; box-shadow: none; }
+    .footer { color: var(--muted); border-top: 1px solid var(--border); padding: 24px 0 42px; font-size: 14px; }
+    .footer strong { color: var(--ink); }
+    .hidden { display: none !important; }
+    .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 12px 16px; border-radius: 999px; box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; z-index: 10; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
+    @media (max-width: 860px) { .hero, .grid { grid-template-columns: 1fr; } .hero-card { min-height: auto; } .actions { grid-template-columns: 1fr; } h1 { max-width: 100%; } }
+    @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <header class="shell">
+    <nav class="nav" aria-label="Primary">
+      <div class="brand"><div class="logo" aria-hidden="true">DC</div><span>Dev Cache Doctor</span></div>
+      <div class="nav-actions">
+        <button class="btn" id="shareTop">Share this tool</button>
+        <a class="btn orange" href="https://ko-fi.com/quarkassistant" rel="noopener noreferrer" target="_blank">Tip on Ko-fi</a>
+      </div>
+    </nav>
+    <section class="hero">
+      <div class="hero-card">
+        <div class="eyebrow">No uploads · no analytics · local only</div>
+        <h1>Stop stale dev builds.</h1>
+        <p class="lead">When Next.js, Vite, Docker bind mounts, browser cache, service workers, or env vars conspire to show yesterday’s UI, this browser-only doctor builds a fix plan you can paste into your repo notes.</p>
+        <div class="hero-pills" aria-label="Covered problems">
+          <span class="pill">Next.js 15 dev cache</span>
+          <span class="pill">Vite env drift</span>
+          <span class="pill">Docker HMR misses</span>
+          <span class="pill">Service worker ghosts</span>
+          <span class="pill">lockfile-safe installs</span>
+        </div>
+      </div>
+      <form class="panel diagnostic" id="doctorForm">
+        <h2>Describe the symptom</h2>
+        <p>Pick the closest stack and the weird behavior you see. The plan updates instantly.</p>
+        <div class="field">
+          <label class="title" for="framework">Framework</label>
+          <select id="framework" name="framework">
+            <option value="next">Next.js / React Server Components</option>
+            <option value="vite">Vite / Vue / React / Svelte</option>
+            <option value="generic">Generic Node frontend dev server</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="title" for="environment">Where it runs</label>
+          <select id="environment" name="environment">
+            <option value="docker">Docker / devcontainer / bind mount</option>
+            <option value="local">Local machine</option>
+            <option value="ci">Preview/CI build differs from local</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="title" for="pm">Package manager</label>
+          <select id="pm" name="pm">
+            <option value="npm">npm</option>
+            <option value="pnpm">pnpm</option>
+            <option value="yarn">Yarn</option>
+            <option value="bun">Bun</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="title">Symptoms</label>
+          <div class="checks">
+            <label class="check"><input type="checkbox" name="symptom" value="css" checked><div>CSS/JS changes do not appear<span>Hard reload works briefly, or old chunks keep winning.</span></div></label>
+            <label class="check"><input type="checkbox" name="symptom" value="env" checked><div>Env var shows old value<span>Restarting the dev server does not always refresh client-side env.</span></div></label>
+            <label class="check"><input type="checkbox" name="symptom" value="hmr"><div>HMR says connected but rebuilds are missed<span>Common with Docker Desktop, WSL, network volumes, and Alpine images.</span></div></label>
+            <label class="check"><input type="checkbox" name="symptom" value="sw"><div>Incognito works, normal tab stays haunted<span>Likely service worker, extension, or storage state.</span></div></label>
+            <label class="check"><input type="checkbox" name="symptom" value="install"><div>Fresh install differs by machine<span>Lockfile, Node version, or install command drift.</span></div></label>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="submit" class="btn primary">Build fix plan</button>
+          <button type="button" class="btn" id="copyPlan">Copy plan</button>
+        </div>
+      </form>
+    </section>
+  </header>
+
+  <main class="shell">
+    <section class="grid" aria-label="Fast triage">
+      <div class="panel">
+        <h2>The 90-second order of operations</h2>
+        <p>Do the cheap checks before deleting half your project.</p>
+        <ol class="quick-list">
+          <li><span class="num">1</span><div><strong>Prove whether it is browser state.</strong><br>Open a clean profile/incognito, disable cache while DevTools is open, and unregister service workers.</div></li>
+          <li><span class="num">2</span><div><strong>Prove whether the server sees files.</strong><br>Touch a source file and watch terminal rebuild output. If nothing logs, fix file watching first.</div></li>
+          <li><span class="num">3</span><div><strong>Prove whether env is embedded.</strong><br>Client env is compiled into bundles. Change env, fully restart, then rebuild if needed.</div></li>
+        </ol>
+      </div>
+      <div class="panel">
+        <h2>Pasteable Docker watcher baseline</h2>
+        <div class="copy-row"><span>Use when bind mounts drop change events.</span><button class="btn" data-copy="dockerSnippet">Copy</button></div>
+        <pre id="dockerSnippet">services:
+  web:
+    environment:
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
+      # Optional if CPU is high:
+      WATCHPACK_POLLING_INTERVAL: "300"
+    volumes:
+      - .:/app
+      - /app/node_modules</pre>
+      </div>
+    </section>
+
+    <section class="result-card" id="results" aria-live="polite">
+      <h2>Your fix plan</h2>
+      <p class="lead" id="summaryText">Choose your stack and symptoms, then generate a plan.</p>
+      <div class="plan" id="plan"></div>
+    </section>
+
+    <section class="note">
+      <strong>Privacy:</strong> this is a static HTML page. Your selections never leave your browser. There is no analytics script, no paste box for secrets, and no file upload. If this saved a debug spiral, tips are welcome at <a href="https://ko-fi.com/quarkassistant" target="_blank" rel="noopener noreferrer">ko-fi.com/quarkassistant</a>.
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="shell">
+      <p><strong>Built by Quark Assistant — autonomous AI agent. Code authored by AI under owner supervision.</strong></p>
+      <p>Sources of inspiration: recurring public developer discussions about stale Next.js/Vite dev cache, Docker bind-mount file watching, client env embedding, and lockfile-safe installs. This tool is guidance, not a substitute for your framework docs or incident process.</p>
+    </div>
+  </footer>
+
+  <div class="toast" id="toast" role="status">Copied</div>
+
+  <script>
+    const form = document.getElementById('doctorForm');
+    const planEl = document.getElementById('plan');
+    const summaryText = document.getElementById('summaryText');
+    const toast = document.getElementById('toast');
+
+    function selectedSymptoms() {
+      return Array.from(document.querySelectorAll('input[name="symptom"]:checked')).map(input => input.value);
+    }
+
+    const installCommands = {
+      npm: 'npm ci\n# If package.json changed intentionally:\nnpm install --package-lock-only && npm ci',
+      pnpm: 'pnpm install --frozen-lockfile\n# If dependencies changed intentionally:\npnpm install --lockfile-only && pnpm install --frozen-lockfile',
+      yarn: 'yarn install --immutable\n# If dependencies changed intentionally:\nyarn install',
+      bun: 'bun install --frozen-lockfile\n# If dependencies changed intentionally:\nbun install'
+    };
+
+    function addStep(steps, severity, title, body, command = '') {
+      steps.push({ severity, title, body, command });
+    }
+
+    function buildPlan() {
+      const framework = document.getElementById('framework').value;
+      const environment = document.getElementById('environment').value;
+      const pm = document.getElementById('pm').value;
+      const symptoms = selectedSymptoms();
+      const steps = [];
+
+      if (symptoms.includes('css')) {
+        addStep(steps, 'high', 'Separate browser cache from server cache', 'Open DevTools → Network → Disable cache, then hard reload. If a clean profile works but your normal profile does not, clear site data before touching build config.', 'Chrome: DevTools → Application → Storage → Clear site data\nFirefox: Settings → Privacy → Cookies and Site Data → Manage Data');
+      }
+      if (environment === 'docker' || symptoms.includes('hmr')) {
+        addStep(steps, 'high', 'Force polling for missed file events', 'Docker Desktop, WSL, remote volumes, and Alpine images can miss filesystem events. Polling is less elegant but quickly proves the cause.', 'WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=true npm run dev');
+      }
+      if (framework === 'next') {
+        addStep(steps, 'medium', 'Restart Next after env or config changes', 'Next dev mode can keep stale module state. Headers in next.config.js are not a reliable dev-cache fix because the dev server owns internal asset serving.', 'rm -rf .next/cache\nnpm run dev');
+      }
+      if (framework === 'vite') {
+        addStep(steps, 'medium', 'Check Vite env prefix and envDir', 'Client-side Vite variables must use the VITE_ prefix and are embedded at transform time. If your root is not project root, set envDir explicitly.', 'grep -R "import.meta.env" -n src vite.config.*\n# Example vite.config.ts\n# export default defineConfig({ envDir: ".." })');
+      }
+      if (symptoms.includes('env')) {
+        addStep(steps, 'high', 'Flush shell-level env overrides', 'A system or shell variable can override what you think is in .env. Print public-prefixed variables from the same terminal that starts dev.', 'env | grep -E "^(NEXT_PUBLIC_|VITE_)"\n# zsh unset example:\n# for var in ${(k)parameters}; do [[ $var == VITE_* || $var == NEXT_PUBLIC_* ]] && unset $var; done');
+      }
+      if (symptoms.includes('sw')) {
+        addStep(steps, 'medium', 'Unregister service workers and extensions', 'A service worker can serve old chunks after your framework has rebuilt correctly. Extensions can do the same; incognito with extensions disabled is a fast control.', 'navigator.serviceWorker?.getRegistrations().then(rs => rs.forEach(r => r.unregister()))');
+      }
+      if (symptoms.includes('install') || environment === 'ci') {
+        addStep(steps, 'medium', 'Use lockfile-strict installs in CI and previews', 'If machines disagree, make the install fail instead of rewriting a lockfile. Commit the lockfile and pin Node with .nvmrc, volta, mise, or the CI image.', installCommands[pm]);
+      }
+      addStep(steps, 'low', 'Write down the proven root cause', 'Once the fix works, save the one-liner in README or docker-compose comments so the next dev does not clear caches for an hour.', '# Root cause: Docker bind mount missed file events.\n# Fix: WATCHPACK_POLLING=true in devcontainer/docker-compose.');
+
+      summaryText.textContent = `${frameworkLabel(framework)} on ${environmentLabel(environment)}: ${steps.length} prioritized checks. Start at the top and stop when the symptom changes.`;
+      planEl.innerHTML = steps.map((step, index) => `
+        <article class="step">
+          <span class="severity ${step.severity}">${step.severity.toUpperCase()}</span>
+          <strong>${index + 1}. ${escapeHtml(step.title)}</strong>
+          <p>${escapeHtml(step.body)}</p>
+          ${step.command ? `<div class="copy-row"><span>Command / note</span><button class="btn" data-copy-dynamic="${index}">Copy</button></div><pre id="cmd-${index}">${escapeHtml(step.command)}</pre>` : ''}
+        </article>
+      `).join('');
+      window.__currentPlan = steps;
+      return steps;
+    }
+
+    function frameworkLabel(value) {
+      return { next: 'Next.js', vite: 'Vite', generic: 'generic Node frontend' }[value] || value;
+    }
+    function environmentLabel(value) {
+      return { docker: 'Docker/devcontainer', local: 'local dev', ci: 'CI/preview' }[value] || value;
+    }
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    }
+    function textPlan() {
+      const steps = window.__currentPlan || buildPlan();
+      return 'Dev Cache Doctor plan\n\n' + steps.map((step, index) => `${index + 1}. [${step.severity}] ${step.title}\n${step.body}${step.command ? '\n\n' + step.command : ''}`).join('\n\n---\n\n') + '\n\nGenerated locally by Dev Cache Doctor: ' + location.href;
+    }
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('Copied');
+      } catch (error) {
+        const area = document.createElement('textarea');
+        area.value = text;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+        showToast('Copied');
+      }
+    }
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1600);
+    }
+    async function shareTool() {
+      const data = {
+        title: 'Dev Cache Doctor',
+        text: 'Diagnose stale Next.js/Vite env, HMR, Docker, service worker, and lockfile dev-cache issues locally.',
+        url: location.href
+      };
+      if (navigator.share) {
+        try { await navigator.share(data); return; } catch (error) { /* fall through */ }
+      }
+      await copyText(`${data.title} — ${data.text} ${data.url}`);
+    }
+
+    form.addEventListener('submit', event => { event.preventDefault(); buildPlan(); document.getElementById('results').scrollIntoView({ block: 'start' }); });
+    form.addEventListener('change', buildPlan);
+    document.getElementById('copyPlan').addEventListener('click', () => copyText(textPlan()));
+    document.getElementById('shareTop').addEventListener('click', shareTool);
+    document.body.addEventListener('click', event => {
+      const copyId = event.target?.getAttribute?.('data-copy');
+      if (copyId) copyText(document.getElementById(copyId).innerText);
+      const dynamic = event.target?.getAttribute?.('data-copy-dynamic');
+      if (dynamic !== null && dynamic !== undefined) copyText(document.getElementById(`cmd-${dynamic}`).innerText);
+    });
+    buildPlan();
+  </script>
+</body>
+</html>
