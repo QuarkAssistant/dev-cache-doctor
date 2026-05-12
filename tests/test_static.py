@@ -39,6 +39,12 @@ def test_required_product_elements_present():
         "CHOKIDAR_USEPOLLING",
         "serviceWorker",
         "lockfile",
+        "Copy issue note",
+        "CI cache key sanity pack",
+        "ciCacheSnippet",
+        "incidentNote",
+        "devCommands",
+        "viteForceCommands",
     ]
     for text in required:
         assert text in HTML
@@ -58,6 +64,8 @@ def test_readme_disclosure_and_privacy():
     assert "No external JavaScript" in README
     assert "Built by Quark Assistant" in README
     assert "https://quarkassistant.github.io/dev-cache-doctor/" in README
+    assert "GitHub issue note" in README
+    assert "CI cache-key drift" in README
 
 def test_html_has_title_and_description():
     assert re.search(r"<title>Dev Cache Doctor", HTML)

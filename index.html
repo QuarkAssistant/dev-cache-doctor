@@ -102,7 +102,7 @@
     }
     .check input { width: 18px; height: 18px; margin-top: 3px; accent-color: var(--accent); }
     .check span { color: var(--muted); display: block; font-size: 14px; }
-    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 20px; }
+    .actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
 
     main { padding-bottom: 42px; }
     .grid { display: grid; grid-template-columns: .9fr 1.1fr; gap: 22px; margin: 22px 0; }
@@ -195,6 +195,7 @@
         <div class="actions">
           <button type="submit" class="btn primary">Build fix plan</button>
           <button type="button" class="btn" id="copyPlan">Copy plan</button>
+          <button type="button" class="btn" id="copyNote">Copy issue note</button>
         </div>
       </form>
     </section>
@@ -224,6 +225,20 @@
     volumes:
       - .:/app
       - /app/node_modules</pre>
+      </div>
+      <div class="panel">
+        <h2>CI cache key sanity pack</h2>
+        <p>Preview builds that disagree with local often share one bad cache key across OS, Node, package manager, or lockfile changes.</p>
+        <div class="copy-row"><span>GitHub Actions cache guardrail</span><button class="btn" data-copy="ciCacheSnippet">Copy</button></div>
+        <pre id="ciCacheSnippet">- uses: actions/setup-node@v4
+  with:
+    node-version-file: .nvmrc
+    cache: npm
+    cache-dependency-path: package-lock.json
+
+# Cache key checklist:
+# include runner.os, Node version, package manager, and lockfile hash
+# never restore node_modules from a branch with a different lockfile</pre>
       </div>
     </section>
 
@@ -263,6 +278,18 @@
       yarn: 'yarn install --immutable\n# If dependencies changed intentionally:\nyarn install',
       bun: 'bun install --frozen-lockfile\n# If dependencies changed intentionally:\nbun install'
     };
+    const devCommands = {
+      npm: 'npm run dev',
+      pnpm: 'pnpm dev',
+      yarn: 'yarn dev',
+      bun: 'bun run dev'
+    };
+    const viteForceCommands = {
+      npm: 'npm run dev -- --force',
+      pnpm: 'pnpm dev --force',
+      yarn: 'yarn dev --force',
+      bun: 'bun run dev -- --force'
+    };
 
     function addStep(steps, severity, title, body, command = '') {
       steps.push({ severity, title, body, command });
@@ -279,13 +306,13 @@
         addStep(steps, 'high', 'Separate browser cache from server cache', 'Open DevTools → Network → Disable cache, then hard reload. If a clean profile works but your normal profile does not, clear site data before touching build config.', 'Chrome: DevTools → Application → Storage → Clear site data\nFirefox: Settings → Privacy → Cookies and Site Data → Manage Data');
       }
       if (environment === 'docker' || symptoms.includes('hmr')) {
-        addStep(steps, 'high', 'Force polling for missed file events', 'Docker Desktop, WSL, remote volumes, and Alpine images can miss filesystem events. Polling is less elegant but quickly proves the cause.', 'WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=true npm run dev');
+        addStep(steps, 'high', 'Force polling for missed file events', 'Docker Desktop, WSL, remote volumes, and Alpine images can miss filesystem events. Polling is less elegant but quickly proves the cause.', `WATCHPACK_POLLING=true CHOKIDAR_USEPOLLING=true ${devCommands[pm]}`);
       }
       if (framework === 'next') {
-        addStep(steps, 'medium', 'Restart Next after env or config changes', 'Next dev mode can keep stale module state. Headers in next.config.js are not a reliable dev-cache fix because the dev server owns internal asset serving.', 'rm -rf .next/cache\nnpm run dev');
+        addStep(steps, 'medium', 'Restart Next after env or config changes', 'Next dev mode can keep stale module state. Headers in next.config.js are not a reliable dev-cache fix because the dev server owns internal asset serving.', `rm -rf .next/cache .next/server .next/static\n${devCommands[pm]}`);
       }
       if (framework === 'vite') {
-        addStep(steps, 'medium', 'Check Vite env prefix and envDir', 'Client-side Vite variables must use the VITE_ prefix and are embedded at transform time. If your root is not project root, set envDir explicitly.', 'grep -R "import.meta.env" -n src vite.config.*\n# Example vite.config.ts\n# export default defineConfig({ envDir: ".." })');
+        addStep(steps, 'medium', 'Check Vite env prefix and envDir', 'Client-side Vite variables must use the VITE_ prefix and are embedded at transform time. If your root is not project root, set envDir explicitly.', `grep -R "import.meta.env" -n src vite.config.*\nrm -rf node_modules/.vite\n${viteForceCommands[pm]}\n# Example vite.config.ts\n# export default defineConfig({ envDir: ".." })`);
       }
       if (symptoms.includes('env')) {
         addStep(steps, 'high', 'Flush shell-level env overrides', 'A system or shell variable can override what you think is in .env. Print public-prefixed variables from the same terminal that starts dev.', 'env | grep -E "^(NEXT_PUBLIC_|VITE_)"\n# zsh unset example:\n# for var in ${(k)parameters}; do [[ $var == VITE_* || $var == NEXT_PUBLIC_* ]] && unset $var; done');
@@ -295,6 +322,9 @@
       }
       if (symptoms.includes('install') || environment === 'ci') {
         addStep(steps, 'medium', 'Use lockfile-strict installs in CI and previews', 'If machines disagree, make the install fail instead of rewriting a lockfile. Commit the lockfile and pin Node with .nvmrc, volta, mise, or the CI image.', installCommands[pm]);
+      }
+      if (environment === 'ci') {
+        addStep(steps, 'high', 'Bust caches only when the inputs change', 'A preview cache should vary by OS, Node version, package manager, and lockfile hash. If those inputs are not in the cache key, old chunks or dependencies can survive a correct commit.', 'Cache key inputs: runner.os + Node version + package manager + hashFiles(lockfile)\nNever restore node_modules from a branch with a different lockfile.');
       }
       addStep(steps, 'low', 'Write down the proven root cause', 'Once the fix works, save the one-liner in README or docker-compose comments so the next dev does not clear caches for an hour.', '# Root cause: Docker bind mount missed file events.\n# Fix: WATCHPACK_POLLING=true in devcontainer/docker-compose.');
 
@@ -317,12 +347,42 @@
     function environmentLabel(value) {
       return { docker: 'Docker/devcontainer', local: 'local dev', ci: 'CI/preview' }[value] || value;
     }
+    function symptomLabel(value) {
+      return {
+        css: 'CSS/JS changes do not appear',
+        env: 'env var shows old value',
+        hmr: 'HMR connected but rebuilds are missed',
+        sw: 'incognito works but normal tab is haunted',
+        install: 'fresh install differs by machine'
+      }[value] || value;
+    }
     function escapeHtml(value) {
       return String(value).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
     }
     function textPlan() {
       const steps = window.__currentPlan || buildPlan();
       return 'Dev Cache Doctor plan\n\n' + steps.map((step, index) => `${index + 1}. [${step.severity}] ${step.title}\n${step.body}${step.command ? '\n\n' + step.command : ''}`).join('\n\n---\n\n') + '\n\nGenerated locally by Dev Cache Doctor: ' + location.href;
+    }
+    function incidentNote() {
+      const framework = frameworkLabel(document.getElementById('framework').value);
+      const environment = environmentLabel(document.getElementById('environment').value);
+      const pm = document.getElementById('pm').value;
+      const symptoms = selectedSymptoms().map(symptomLabel);
+      const steps = window.__currentPlan || buildPlan();
+      return [
+        '## Dev-cache triage note',
+        '',
+        `Stack: ${framework}`,
+        `Environment: ${environment}`,
+        `Package manager: ${pm}`,
+        `Symptoms: ${symptoms.length ? symptoms.join('; ') : 'not specified'}`,
+        '',
+        '### Suggested order',
+        steps.map((step, index) => `${index + 1}. **[${step.severity}] ${step.title}** — ${step.body}${step.command ? `\n\n   \`\`\`sh\n${step.command}\n   \`\`\`` : ''}`).join('\n\n'),
+        '',
+        '_Generated locally by Dev Cache Doctor. No source files, env values, lockfiles, or secrets were uploaded._',
+        location.href
+      ].join('\n');
     }
     async function copyText(text) {
       try {
@@ -358,6 +418,7 @@
     form.addEventListener('submit', event => { event.preventDefault(); buildPlan(); document.getElementById('results').scrollIntoView({ block: 'start' }); });
     form.addEventListener('change', buildPlan);
     document.getElementById('copyPlan').addEventListener('click', () => copyText(textPlan()));
+    document.getElementById('copyNote').addEventListener('click', () => copyText(incidentNote()));
     document.getElementById('shareTop').addEventListener('click', shareTool);
     document.body.addEventListener('click', event => {
       const copyId = event.target?.getAttribute?.('data-copy');

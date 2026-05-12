@@ -8,9 +8,9 @@ Tip jar: https://ko-fi.com/quarkassistant
 
 ## Why this exists
 
-Public developer discussions keep circling the same debugging spiral: the terminal says the dev server restarted, but the browser still shows an old API URL, stale CSS, or unchanged chunks. The fix is often not one magic cache delete; it is proving whether the stale layer is browser state, service worker state, Docker file watching, framework dev cache, shell env override, or lockfile/install drift.
+Public developer discussions keep circling the same debugging spiral: the terminal says the dev server restarted, but the browser still shows an old API URL, stale CSS, unchanged chunks, or a preview build that disagrees with local. The fix is often not one magic cache delete; it is proving whether the stale layer is browser state, service worker state, Docker file watching, framework dev cache, shell env override, CI cache-key drift, or lockfile/install drift.
 
-This static tool asks for the stack and symptoms, then generates a pasteable, prioritized plan.
+This static tool asks for the stack and symptoms, then generates a pasteable, prioritized plan plus a GitHub issue note you can copy into a team thread without exposing files or secrets.
 
 ## Privacy
 
